@@ -130,7 +130,16 @@
             </button>
         </div>
         <div class="right menu">
-            <div id="judge0-theme-toggle-btn" class="icon link item" data-content="">
+                <!-- <option value="gemini-2.0" data-content="Gemini 2.0">Gemini 2.0</option>
+                <option value="deepseek-r1" data-content="Deepseek R1">Deepseek R1</option>
+                <option value="groq-mixtral" data-content="Groq mixtral">Groq mixtral</option>
+                <option value="llama-3.3-versatile" data-content="Llama 3.3 versatile">Llama 3.3 versatile</option> -->
+            <div class="item">
+                <div class="ui input">
+                    <select id="select-ai" class="ui search selection dropdown"></select>
+                </div>
+            </div>
+            <div id="judge0-theme-toggle-btn" class="icon link item" onclick="toggleThemeMode()" data-content="">
                 <i id="judge0-theme-toggle-btn-icon" class="sun icon"></i>
             </div>
             <a class="icon item judge0-minimal-hidden judge0-electron-hidden" href="https://platform.sulu.sh/apis/judge0" target="_blank" data-content="API Docs">
