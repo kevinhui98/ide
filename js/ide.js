@@ -1,10 +1,12 @@
 import { IS_PUTER } from "./puter.js";
-
 const API_KEY = ""; // Get yours at https://platform.sulu.sh/apis/judge0
+const OR_KEY = "";
 
-const AUTH_HEADERS = API_KEY ? {
-    "Authorization": `Bearer ${API_KEY}`
-} : {};
+const AUTH_HEADERS = API_KEY
+    ? {
+        Authorization: `Bearer ${API_KEY}`,
+    }
+    : {};
 
 const CE = "CE";
 const EXTRA_CE = "EXTRA_CE";
@@ -24,7 +26,7 @@ UNAUTHENTICATED_BASE_URL[CE] = UNAUTHENTICATED_CE_BASE_URL;
 UNAUTHENTICATED_BASE_URL[EXTRA_CE] = UNAUTHENTICATED_EXTRA_CE_BASE_URL;
 
 const INITIAL_WAIT_TIME_MS = 0;
-const WAIT_TIME_FUNCTION = i => 100;
+const WAIT_TIME_FUNCTION = (i) => 100;
 const MAX_PROBE_REQUESTS = 50;
 
 var fontSize = 13;
@@ -34,12 +36,14 @@ var layout;
 var sourceEditor;
 var stdinEditor;
 var stdoutEditor;
+var chatEditor;
 
 var $selectLanguage;
 var $compilerOptions;
 var $commandLineArguments;
 var $runBtn;
 var $statusLine;
+var $selectAi
 
 var timeStart;
 
@@ -49,43 +53,66 @@ var languages = {};
 var layoutConfig = {
     settings: {
         showPopoutIcon: false,
-        reorderEnabled: true
+        reorderEnabled: true,
     },
-    content: [{
-        type: "row",
-        content: [{
-            type: "component",
-            width: 66,
-            componentName: "source",
-            id: "source",
-            title: "Source Code",
-            isClosable: false,
-            componentState: {
-                readOnly: false
-            }
-        }, {
-            type: "column",
-            content: [{
-                type: "component",
-                componentName: "stdin",
-                id: "stdin",
-                title: "Input",
-                isClosable: false,
-                componentState: {
-                    readOnly: false
-                }
-            }, {
-                type: "component",
-                componentName: "stdout",
-                id: "stdout",
-                title: "Output",
-                isClosable: false,
-                componentState: {
-                    readOnly: true
-                }
-            }]
-        }]
-    }]
+    content: [
+        {
+            type: "row",
+            content: [
+                {
+                    type: "component",
+                    width: 50,
+                    componentName: "source",
+                    id: "source",
+                    title: "Source Code",
+                    isClosable: false,
+                    componentState: {
+                        readOnly: false,
+                    },
+                },
+                {
+                    type: "column",
+                    content: [
+                        {
+                            type: "component",
+                            componentName: "stdin",
+                            id: "stdin",
+                            title: "Input",
+                            isClosable: false,
+                            componentState: {
+                                readOnly: false,
+                            },
+                        },
+                        {
+                            type: "component",
+                            componentName: "stdout",
+                            id: "stdout",
+                            title: "Output",
+                            isClosable: false,
+                            componentState: {
+                                readOnly: true,
+                            },
+                        },
+                    ],
+                },
+                {
+                    type: "column",
+                    content: [
+                        {
+                            type: "component",
+                            componentName: "chat",
+                            id: "chat",
+                            title: "AI Chat",
+                            isClosable: true,
+                            componentState: {
+                                readOnly: true,
+                            },
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
 };
 
 var gPuterFile;
@@ -115,22 +142,33 @@ function showError(title, content) {
         `**Description**:\n${content}`
     );
 
-    $("#report-problem-btn").attr("href", `https://github.com/judge0/ide/issues/new?title=${reportTitle}&body=${reportBody}`);
+    $("#report-problem-btn").attr(
+        "href",
+        `https://github.com/judge0/ide/issues/new?title=${reportTitle}&body=${reportBody}`
+    );
     $("#judge0-site-modal").modal("show");
 }
 
 function showHttpError(jqXHR) {
-    showError(`${jqXHR.statusText} (${jqXHR.status})`, `<pre>${JSON.stringify(jqXHR, null, 4)}</pre>`);
+    showError(
+        `${jqXHR.statusText} (${jqXHR.status})`,
+        `<pre>${JSON.stringify(jqXHR, null, 4)}</pre>`
+    );
 }
 
 function handleRunError(jqXHR) {
     showHttpError(jqXHR);
     $runBtn.removeClass("disabled");
 
-    window.top.postMessage(JSON.parse(JSON.stringify({
-        event: "runError",
-        data: jqXHR
-    })), "*");
+    window.top.postMessage(
+        JSON.parse(
+            JSON.stringify({
+                event: "runError",
+                data: jqXHR,
+            })
+        ),
+        "*"
+    );
 }
 
 function handleResult(data) {
@@ -140,8 +178,8 @@ function handleResult(data) {
     const status = data.status;
     const stdout = decode(data.stdout);
     const compileOutput = decode(data.compile_output);
-    const time = (data.time === null ? "-" : data.time + "s");
-    const memory = (data.memory === null ? "-" : data.memory + "KB");
+    const time = data.time === null ? "-" : data.time + "s";
+    const memory = data.memory === null ? "-" : data.memory + "KB";
 
     $statusLine.html(`${status.description}, ${time}, ${memory} (TAT: ${tat}ms)`);
 
@@ -151,17 +189,22 @@ function handleResult(data) {
 
     $runBtn.removeClass("disabled");
 
-    window.top.postMessage(JSON.parse(JSON.stringify({
-        event: "postExecution",
-        status: data.status,
-        time: data.time,
-        memory: data.memory,
-        output: output
-    })), "*");
+    window.top.postMessage(
+        JSON.parse(
+            JSON.stringify({
+                event: "postExecution",
+                status: data.status,
+                time: data.time,
+                memory: data.memory,
+                output: output,
+            })
+        ),
+        "*"
+    );
 }
 
 async function getSelectedLanguage() {
-    return getLanguage(getSelectedLanguageFlavor(), getSelectedLanguageId())
+    return getLanguage(getSelectedLanguageFlavor(), getSelectedLanguageId());
 }
 
 function getSelectedLanguageId() {
@@ -204,19 +247,24 @@ function run() {
         stdin: stdinValue,
         compiler_options: compilerOptions,
         command_line_arguments: commandLineArguments,
-        redirect_stderr_to_stdout: true
+        redirect_stderr_to_stdout: true,
     };
 
     let sendRequest = function (data) {
-        window.top.postMessage(JSON.parse(JSON.stringify({
-            event: "preExecution",
-            source_code: sourceEditor.getValue(),
-            language_id: languageId,
-            flavor: flavor,
-            stdin: stdinEditor.getValue(),
-            compiler_options: compilerOptions,
-            command_line_arguments: commandLineArguments
-        })), "*");
+        window.top.postMessage(
+            JSON.parse(
+                JSON.stringify({
+                    event: "preExecution",
+                    source_code: sourceEditor.getValue(),
+                    language_id: languageId,
+                    flavor: flavor,
+                    stdin: stdinEditor.getValue(),
+                    compiler_options: compilerOptions,
+                    command_line_arguments: commandLineArguments,
+                })
+            ),
+            "*"
+        );
 
         timeStart = performance.now();
         $.ajax({
@@ -227,12 +275,15 @@ function run() {
             headers: AUTH_HEADERS,
             success: function (data, textStatus, request) {
                 console.log(`Your submission token is: ${data.token}`);
-                let region = request.getResponseHeader('X-Judge0-Region');
-                setTimeout(fetchSubmission.bind(null, flavor, region, data.token, 1), INITIAL_WAIT_TIME_MS);
+                let region = request.getResponseHeader("X-Judge0-Region");
+                setTimeout(
+                    fetchSubmission.bind(null, flavor, region, data.token, 1),
+                    INITIAL_WAIT_TIME_MS
+                );
             },
-            error: handleRunError
+            error: handleRunError,
         });
-    }
+    };
 
     if (languageId === 82) {
         if (!sqliteAdditionalFiles) {
@@ -244,10 +295,9 @@ function run() {
                     data["additional_files"] = sqliteAdditionalFiles;
                     sendRequest(data);
                 },
-                error: handleRunError
+                error: handleRunError,
             });
-        }
-        else {
+        } else {
             data["additional_files"] = sqliteAdditionalFiles;
             sendRequest(data);
         }
@@ -258,27 +308,41 @@ function run() {
 
 function fetchSubmission(flavor, region, submission_token, iteration) {
     if (iteration >= MAX_PROBE_REQUESTS) {
-        handleRunError({
-            statusText: "Maximum number of probe requests reached.",
-            status: 504
-        }, null, null);
+        handleRunError(
+            {
+                statusText: "Maximum number of probe requests reached.",
+                status: 504,
+            },
+            null,
+            null
+        );
         return;
     }
 
     $.ajax({
         url: `${UNAUTHENTICATED_BASE_URL[flavor]}/submissions/${submission_token}?base64_encoded=true`,
         headers: {
-            "X-Judge0-Region": region
+            "X-Judge0-Region": region,
         },
         success: function (data) {
-            if (data.status.id <= 2) { // In Queue or Processing
+            if (data.status.id <= 2) {
+                // In Queue or Processing
                 $statusLine.html(data.status.description);
-                setTimeout(fetchSubmission.bind(null, flavor, region, submission_token, iteration + 1), WAIT_TIME_FUNCTION(iteration));
+                setTimeout(
+                    fetchSubmission.bind(
+                        null,
+                        flavor,
+                        region,
+                        submission_token,
+                        iteration + 1
+                    ),
+                    WAIT_TIME_FUNCTION(iteration)
+                );
             } else {
                 handleResult(data);
             }
         },
-        error: handleRunError
+        error: handleRunError,
     });
 }
 
@@ -317,12 +381,89 @@ async function openAction() {
     }
 }
 
+async function callLLMApi(question, code) {
+    const prompt = `
+        You are a senior software engineer with expertise in multiple programming languages. Your task is to analyze the following code and provide detailed, actionable feedback or improvements based on the user's question.
+
+        User's Question: ${question}
+
+        Code:
+        ${code}
+
+        Please provide:
+        1. A brief analysis of the code.
+        2. Specific improvements or optimizations that can be made.
+        3. Any best practices or design patterns that could be applied.
+        4. If applicable, provide an example of improved code.
+    `;
+
+    const body = {
+        model: "gpt-4o-mini",
+        messages: [
+            {
+                role: "system",
+                content:
+                    "You are a senior software engineer with expertise in multiple programming languages.",
+            },
+            {
+                role: "user",
+                content: prompt,
+            },
+        ],
+    };
+
+    const AUTH_HEADERS = OR_KEY
+        ? {
+            Authorization: `Bearer ${OR_KEY}`,
+        }
+        : {};
+    return new Promise((resolve, reject) => {
+        $.ajax({
+            url: `https://openrouter.ai/api/v1/chat/completions`,
+            type: "POST",
+            contentType: "application/json",
+            data: JSON.stringify(body),
+            headers: AUTH_HEADERS,
+            success: function (data, textStatus, request) {
+                console.log(data);
+                const response = data.choices[0].message.content;
+                console.log("Message by deekseek: ", response);
+                resolve(response);
+            },
+            error: function (data, textStatus) {
+                console.log("Error getting response from open router.", data, textStatus);
+                reject("Error.");
+            },
+        });
+    });
+}
+
+async function sendButtonClicked() {
+    console.log("Button clicked");
+    const userInput = document.getElementById("chat-field").value;
+    console.log(userInput);
+    const code = sourceEditor.getValue().trim();
+    console.log("Source editor text: ", code);
+
+    const newHTMLElement = document.createElement("p");
+    newHTMLElement.innerText = userInput;
+    document.getElementById("chat-messages").appendChild(newHTMLElement);
+    document.getElementById("chat-field").value = "";
+    const llmResponse = await callLLMApi(userInput, code);
+    const llmHTMLElement = document.createElement("p");
+    llmHTMLElement.innerText = llmResponse;
+    document.getElementById("chat-messages").appendChild(llmHTMLElement);
+}
+
 async function saveAction() {
     if (IS_PUTER) {
         if (gPuterFile) {
             gPuterFile.write(sourceEditor.getValue());
         } else {
-            gPuterFile = await puter.ui.showSaveFilePicker(sourceEditor.getValue(), getSourceCodeName());
+            gPuterFile = await puter.ui.showSaveFilePicker(
+                sourceEditor.getValue(),
+                getSourceCodeName()
+            );
             setSourceCodeName(gPuterFile.name);
         }
     } else {
@@ -347,7 +488,10 @@ async function loadLangauges() {
                     let language = data[i];
                     let option = new Option(language.name, language.id);
                     option.setAttribute("flavor", CE);
-                    option.setAttribute("langauge_mode", getEditorLanguageMode(language.name));
+                    option.setAttribute(
+                        "langauge_mode",
+                        getEditorLanguageMode(language.name)
+                    );
 
                     if (language.id !== 89) {
                         options.push(option);
@@ -358,7 +502,7 @@ async function loadLangauges() {
                     }
                 }
             },
-            error: reject
+            error: reject,
         }).always(function () {
             $.ajax({
                 url: UNAUTHENTICATED_EXTRA_CE_BASE_URL + "/languages",
@@ -367,14 +511,20 @@ async function loadLangauges() {
                         let language = data[i];
                         let option = new Option(language.name, language.id);
                         option.setAttribute("flavor", EXTRA_CE);
-                        option.setAttribute("langauge_mode", getEditorLanguageMode(language.name));
+                        option.setAttribute(
+                            "langauge_mode",
+                            getEditorLanguageMode(language.name)
+                        );
 
-                        if (options.findIndex((t) => (t.text === option.text)) === -1 && language.id !== 89) {
+                        if (
+                            options.findIndex((t) => t.text === option.text) === -1 &&
+                            language.id !== 89
+                        ) {
                             options.push(option);
                         }
                     }
                 },
-                error: reject
+                error: reject,
             }).always(function () {
                 options.sort((a, b) => a.text.localeCompare(b.text));
                 $selectLanguage.append(options);
@@ -382,16 +532,18 @@ async function loadLangauges() {
             });
         });
     });
-};
+}
 
 async function loadSelectedLanguage(skipSetDefaultSourceCodeName = false) {
-    monaco.editor.setModelLanguage(sourceEditor.getModel(), $selectLanguage.find(":selected").attr("langauge_mode"));
+    monaco.editor.setModelLanguage(
+        sourceEditor.getModel(),
+        $selectLanguage.find(":selected").attr("langauge_mode")
+    );
 
     if (!skipSetDefaultSourceCodeName) {
         setSourceCodeName((await getSelectedLanguage()).source_file);
     }
 }
-
 function selectLanguageByFlavorAndId(languageId, flavor) {
     let option = $selectLanguage.find(`[value=${languageId}][flavor=${flavor}]`);
     if (option.length) {
@@ -422,7 +574,7 @@ async function getLanguage(flavor, languageId) {
                 languages[flavor][languageId] = data;
                 resolve(data);
             },
-            error: reject
+            error: reject,
         });
     });
 }
@@ -449,7 +601,9 @@ function clear() {
 }
 
 function refreshSiteContentHeight() {
-    const navigationHeight = document.getElementById("judge0-site-navigation").offsetHeight;
+    const navigationHeight = document.getElementById(
+        "judge0-site-navigation"
+    ).offsetHeight;
 
     const siteContent = document.getElementById("judge0-site-content");
     siteContent.style.height = `${window.innerHeight}px`;
@@ -465,16 +619,19 @@ window.addEventListener("resize", refreshLayoutSize);
 document.addEventListener("DOMContentLoaded", async function () {
     $("#select-language").dropdown();
     $("[data-content]").popup({
-        lastResort: "left center"
+        lastResort: "left center",
     });
 
     refreshSiteContentHeight();
 
-    console.log("Hey, Judge0 IDE is open-sourced: https://github.com/judge0/ide. Have fun!");
+    console.log(
+        "Hey, Judge0 IDE is open-sourced: https://github.com/judge0/ide. Have fun!"
+    );
 
     $selectLanguage = $("#select-language");
     $selectLanguage.change(function (event, data) {
-        let skipSetDefaultSourceCodeName = (data && data.skipSetDefaultSourceCodeName) || !!gPuterFile;
+        let skipSetDefaultSourceCodeName =
+            (data && data.skipSetDefaultSourceCodeName) || !!gPuterFile;
         loadSelectedLanguage(skipSetDefaultSourceCodeName);
     });
 
@@ -501,6 +658,14 @@ document.addEventListener("DOMContentLoaded", async function () {
             reader.readAsText(selectedFile);
         }
     });
+    $('#select-ai').dropdown();
+    // Get the selected option within the select tag which is also updated on change
+    $selectAi = $('#select-ai');
+    $selectAi.change(function () {
+        const selectedOption = $selectAi.find(":selected").text();
+        console.log("Selected AI:", selectedOption);
+    });
+    $selectAi = $('#select-ai');
 
     $statusLine = $("#judge0-status-line");
 
@@ -550,11 +715,14 @@ document.addEventListener("DOMContentLoaded", async function () {
                 language: "cpp",
                 fontFamily: "JetBrains Mono",
                 minimap: {
-                    enabled: true
-                }
+                    enabled: true,
+                },
             });
 
-            sourceEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, run);
+            sourceEditor.addCommand(
+                monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
+                run
+            );
         });
 
         layout.registerComponent("stdin", function (container, state) {
@@ -565,8 +733,8 @@ document.addEventListener("DOMContentLoaded", async function () {
                 language: "plaintext",
                 fontFamily: "JetBrains Mono",
                 minimap: {
-                    enabled: false
-                }
+                    enabled: false,
+                },
             });
         });
 
@@ -578,9 +746,28 @@ document.addEventListener("DOMContentLoaded", async function () {
                 language: "plaintext",
                 fontFamily: "JetBrains Mono",
                 minimap: {
-                    enabled: false
-                }
+                    enabled: false,
+                },
             });
+        });
+
+        layout.registerComponent("chat", function (container, state) {
+            chatEditor = container.getElement().html(
+                `<div style="display:flex; flex-direction: column; gap: 1rem;color: white; padding:1rem; height: 100%;">
+                😊 Hello Headstarter!
+                <div>
+                    <input id='api-key' type='text' style="width: 80%; height: 100%;" placeholder="Type you key here" />
+                    <button id='submit-key' style="padding: 0.5rem; border-radius: 0.5rem; border: 1px solid #ccc;" class="ui primary button">submit</button>
+                </div>
+                <div id="chat-messages" style="display:flex; flex-direction: column; overflow: scroll; max-height: 90%; height:85vh;">
+                    <p> Feel free to ask questions about the code!</p>
+                </div>
+                <div style="display:flex; gap:3px; width=100%; border-radius: 0.5rem;">
+                    <input id="chat-field" type="text" style="width: 80%;" placeholder="Type here to chat with us!" />
+                    <button id="chat-button" style="padding: 0.5rem; border-radius: 0.5rem; border: 1px solid #ccc;" class="ui primary button">Send</button>
+                </div>
+          </div>`
+            );
         });
 
         layout.on("initialised", function () {
@@ -597,11 +784,11 @@ document.addEventListener("DOMContentLoaded", async function () {
         superKey = "Ctrl";
     }
 
-    [$runBtn].forEach(btn => {
+    [$runBtn].forEach((btn) => {
         btn.attr("data-content", `${superKey}${btn.attr("data-content")}`);
     });
 
-    document.querySelectorAll(".description").forEach(e => {
+    document.querySelectorAll(".description").forEach((e) => {
         e.innerText = `${superKey}${e.innerText}`;
     });
 
@@ -612,8 +799,16 @@ document.addEventListener("DOMContentLoaded", async function () {
         });
     }
 
-    document.getElementById("judge0-open-file-btn").addEventListener("click", openAction);
-    document.getElementById("judge0-save-btn").addEventListener("click", saveAction);
+    document
+        .getElementById("judge0-open-file-btn")
+        .addEventListener("click", openAction);
+    document
+        .getElementById("judge0-save-btn")
+        .addEventListener("click", saveAction);
+
+    document
+        .getElementById("chat-button")
+        .addEventListener("click", sendButtonClicked);
 
     window.onmessage = function (e) {
         if (!e.data) {
@@ -621,16 +816,21 @@ document.addEventListener("DOMContentLoaded", async function () {
         }
 
         if (e.data.action === "get") {
-            window.top.postMessage(JSON.parse(JSON.stringify({
-                event: "getResponse",
-                source_code: sourceEditor.getValue(),
-                language_id: getSelectedLanguageId(),
-                flavor: getSelectedLanguageFlavor(),
-                stdin: stdinEditor.getValue(),
-                stdout: stdoutEditor.getValue(),
-                compiler_options: $compilerOptions.val(),
-                command_line_arguments: $commandLineArguments.val()
-            })), "*");
+            window.top.postMessage(
+                JSON.parse(
+                    JSON.stringify({
+                        event: "getResponse",
+                        source_code: sourceEditor.getValue(),
+                        language_id: getSelectedLanguageId(),
+                        flavor: getSelectedLanguageFlavor(),
+                        stdin: stdinEditor.getValue(),
+                        stdout: stdoutEditor.getValue(),
+                        compiler_options: $compilerOptions.val(),
+                        command_line_arguments: $commandLineArguments.val(),
+                    })
+                ),
+                "*"
+            );
         } else if (e.data.action === "set") {
             if (e.data.source_code) {
                 sourceEditor.setValue(e.data.source_code);
@@ -657,7 +857,8 @@ document.addEventListener("DOMContentLoaded", async function () {
     };
 });
 
-const DEFAULT_SOURCE = "\
+const DEFAULT_SOURCE =
+    "\
 #include <algorithm>\n\
 #include <cstdint>\n\
 #include <iostream>\n\
@@ -764,7 +965,8 @@ int main()\n\
 }\n\
 ";
 
-const DEFAULT_STDIN = "\
+const DEFAULT_STDIN =
+    "\
 3\n\
 3 2\n\
 1 2 5\n\
@@ -787,29 +989,29 @@ const DEFAULT_LANGUAGE_ID = 105; // C++ (GCC 14.1.0) (https://ce.judge0.com/lang
 function getEditorLanguageMode(languageName) {
     const DEFAULT_EDITOR_LANGUAGE_MODE = "plaintext";
     const LANGUAGE_NAME_TO_LANGUAGE_EDITOR_MODE = {
-        "Bash": "shell",
-        "C": "c",
-        "C3": "c",
+        Bash: "shell",
+        C: "c",
+        C3: "c",
         "C#": "csharp",
         "C++": "cpp",
-        "Clojure": "clojure",
+        Clojure: "clojure",
         "F#": "fsharp",
-        "Go": "go",
-        "Java": "java",
-        "JavaScript": "javascript",
-        "Kotlin": "kotlin",
+        Go: "go",
+        Java: "java",
+        JavaScript: "javascript",
+        Kotlin: "kotlin",
         "Objective-C": "objective-c",
-        "Pascal": "pascal",
-        "Perl": "perl",
-        "PHP": "php",
-        "Python": "python",
-        "R": "r",
-        "Ruby": "ruby",
-        "SQL": "sql",
-        "Swift": "swift",
-        "TypeScript": "typescript",
-        "Visual Basic": "vb"
-    }
+        Pascal: "pascal",
+        Perl: "perl",
+        PHP: "php",
+        Python: "python",
+        R: "r",
+        Ruby: "ruby",
+        SQL: "sql",
+        Swift: "swift",
+        TypeScript: "typescript",
+        "Visual Basic": "vb",
+    };
 
     for (let key in LANGUAGE_NAME_TO_LANGUAGE_EDITOR_MODE) {
         if (languageName.toLowerCase().startsWith(key.toLowerCase())) {
@@ -820,27 +1022,27 @@ function getEditorLanguageMode(languageName) {
 }
 
 const EXTENSIONS_TABLE = {
-    "asm": { "flavor": CE, "language_id": 45 }, // Assembly (NASM 2.14.02)
-    "c": { "flavor": CE, "language_id": 103 }, // C (GCC 14.1.0)
-    "cpp": { "flavor": CE, "language_id": 105 }, // C++ (GCC 14.1.0)
-    "cs": { "flavor": EXTRA_CE, "language_id": 29 }, // C# (.NET Core SDK 7.0.400)
-    "go": { "flavor": CE, "language_id": 95 }, // Go (1.18.5)
-    "java": { "flavor": CE, "language_id": 91 }, // Java (JDK 17.0.6)
-    "js": { "flavor": CE, "language_id": 102 }, // JavaScript (Node.js 22.08.0)
-    "lua": { "flavor": CE, "language_id": 64 }, // Lua (5.3.5)
-    "pas": { "flavor": CE, "language_id": 67 }, // Pascal (FPC 3.0.4)
-    "php": { "flavor": CE, "language_id": 98 }, // PHP (8.3.11)
-    "py": { "flavor": EXTRA_CE, "language_id": 25 }, // Python for ML (3.11.2)
-    "r": { "flavor": CE, "language_id": 99 }, // R (4.4.1)
-    "rb": { "flavor": CE, "language_id": 72 }, // Ruby (2.7.0)
-    "rs": { "flavor": CE, "language_id": 73 }, // Rust (1.40.0)
-    "scala": { "flavor": CE, "language_id": 81 }, // Scala (2.13.2)
-    "sh": { "flavor": CE, "language_id": 46 }, // Bash (5.0.0)
-    "swift": { "flavor": CE, "language_id": 83 }, // Swift (5.2.3)
-    "ts": { "flavor": CE, "language_id": 101 }, // TypeScript (5.6.2)
-    "txt": { "flavor": CE, "language_id": 43 }, // Plain Text
+    asm: { flavor: CE, language_id: 45 }, // Assembly (NASM 2.14.02)
+    c: { flavor: CE, language_id: 103 }, // C (GCC 14.1.0)
+    cpp: { flavor: CE, language_id: 105 }, // C++ (GCC 14.1.0)
+    cs: { flavor: EXTRA_CE, language_id: 29 }, // C# (.NET Core SDK 7.0.400)
+    go: { flavor: CE, language_id: 95 }, // Go (1.18.5)
+    java: { flavor: CE, language_id: 91 }, // Java (JDK 17.0.6)
+    js: { flavor: CE, language_id: 102 }, // JavaScript (Node.js 22.08.0)
+    lua: { flavor: CE, language_id: 64 }, // Lua (5.3.5)
+    pas: { flavor: CE, language_id: 67 }, // Pascal (FPC 3.0.4)
+    php: { flavor: CE, language_id: 98 }, // PHP (8.3.11)
+    py: { flavor: EXTRA_CE, language_id: 25 }, // Python for ML (3.11.2)
+    r: { flavor: CE, language_id: 99 }, // R (4.4.1)
+    rb: { flavor: CE, language_id: 72 }, // Ruby (2.7.0)
+    rs: { flavor: CE, language_id: 73 }, // Rust (1.40.0)
+    scala: { flavor: CE, language_id: 81 }, // Scala (2.13.2)
+    sh: { flavor: CE, language_id: 46 }, // Bash (5.0.0)
+    swift: { flavor: CE, language_id: 83 }, // Swift (5.2.3)
+    ts: { flavor: CE, language_id: 101 }, // TypeScript (5.6.2)
+    txt: { flavor: CE, language_id: 43 }, // Plain Text
 };
 
 function getLanguageForExtension(extension) {
-    return EXTENSIONS_TABLE[extension] || { "flavor": CE, "language_id": 43 }; // Plain Text (https://ce.judge0.com/languages/43)
+    return EXTENSIONS_TABLE[extension] || { flavor: CE, language_id: 43 }; // Plain Text (https://ce.judge0.com/languages/43)
 }
