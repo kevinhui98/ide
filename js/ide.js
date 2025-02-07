@@ -1,6 +1,6 @@
 import { IS_PUTER } from "./puter.js";
 const API_KEY = ""; // Get yours at https://platform.sulu.sh/apis/judge0
-const OR_KEY = "";
+const OR_KEY = '';
 
 const AUTH_HEADERS = API_KEY
     ? {
@@ -44,7 +44,7 @@ var $commandLineArguments;
 var $runBtn;
 var $statusLine;
 var $selectAi
-
+var selectedOption = 'Gemini'
 var timeStart;
 
 var sqliteAdditionalFiles;
@@ -381,7 +381,7 @@ async function openAction() {
     }
 }
 
-async function callLLMApi(question, code) {
+async function callLLMApi(question, code, option) {
     const prompt = `
         You are a senior software engineer with expertise in multiple programming languages. Your task is to analyze the following code and provide detailed, actionable feedback or improvements based on the user's question.
 
@@ -397,8 +397,15 @@ async function callLLMApi(question, code) {
         4. If applicable, provide an example of improved code.
     `;
 
+    const models = {
+        'Gemini': 'google/gemini-2.0-flash-thinking-exp:free',
+        'Deepseek': 'deepseek/deepseek-r1:free',
+        'Openai': 'openai/gpt-4o',
+        'Llama': 'nvidia/llama-3.1-nemotron-70b-instruct:free',
+
+    }
     const body = {
-        model: "gpt-4o-mini",
+        model: models[option],
         messages: [
             {
                 role: "system",
@@ -411,31 +418,44 @@ async function callLLMApi(question, code) {
             },
         ],
     };
-
-    const AUTH_HEADERS = OR_KEY
-        ? {
-            Authorization: `Bearer ${OR_KEY}`,
-        }
-        : {};
-    return new Promise((resolve, reject) => {
-        $.ajax({
-            url: `https://openrouter.ai/api/v1/chat/completions`,
-            type: "POST",
-            contentType: "application/json",
+    try {
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${OR_KEY}`,
+                "Content-Type": "application/json",
+            },
             data: JSON.stringify(body),
-            headers: AUTH_HEADERS,
-            success: function (data, textStatus, request) {
-                console.log(data);
-                const response = data.choices[0].message.content;
-                console.log("Message by deekseek: ", response);
-                resolve(response);
-            },
-            error: function (data, textStatus) {
-                console.log("Error getting response from open router.", data, textStatus);
-                reject("Error.");
-            },
         });
-    });
+        if (!response.ok) {
+            throw new Error(`Response status: ${response.status}`);
+        }
+
+        const json = await response.json();
+        console.log(json);
+        return json
+    } catch (error) {
+        console.log(error)
+    }
+    // return new Promise((resolve, reject) => {
+    //     $.ajax({
+    //         url: `https://openrouter.ai/api/v1/chat/completions`,
+    //         type: "POST",
+    //         contentType: "application/json",
+    //         data: JSON.stringify(body),
+    //         headers: AUTH_HEADERS,
+    //         success: function (data, textStatus, request) {
+    //             console.log(data);
+    //             const response = data.choices[0].message.content;
+    //             console.log("Message by deekseek: ", response);
+    //             resolve(response);
+    //         },
+    //         error: function (data, textStatus) {
+    //             console.log("Error getting response from open router.", data, textStatus);
+    //             reject("Error.");
+    //         },
+    //     });
+    // });
 }
 
 async function sendButtonClicked() {
@@ -444,14 +464,15 @@ async function sendButtonClicked() {
     console.log(userInput);
     const code = sourceEditor.getValue().trim();
     console.log("Source editor text: ", code);
-
+    const selectOption = $selectAi.find(":selected").id;
+    console.log(selectOption, selectedOption)
     const newHTMLElement = document.createElement("p");
     newHTMLElement.innerText = userInput;
     document.getElementById("chat-messages").appendChild(newHTMLElement);
     document.getElementById("chat-field").value = "";
-    const llmResponse = await callLLMApi(userInput, code);
+    const llmResponse = await callLLMApi(userInput, code, selectedOption);
     const llmHTMLElement = document.createElement("p");
-    llmHTMLElement.innerText = llmResponse;
+    llmHTMLElement.innerText = llmResponse.choices[0].message.content;
     document.getElementById("chat-messages").appendChild(llmHTMLElement);
 }
 
@@ -662,7 +683,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     // Get the selected option within the select tag which is also updated on change
     $selectAi = $('#select-ai');
     $selectAi.change(function () {
-        const selectedOption = $selectAi.find(":selected").text();
+        selectedOption = $selectAi.find(":selected").id;
         console.log("Selected AI:", selectedOption);
     });
     $selectAi = $('#select-ai');
