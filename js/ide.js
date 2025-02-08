@@ -381,7 +381,7 @@ async function openAction() {
     }
 }
 
-async function callLLMApi(question, code, option) {
+async function callLLMApi(question, code, option = 'Gemini') {
     const prompt = `
         You are a senior software engineer with expertise in multiple programming languages. Your task is to analyze the following code and provide detailed, actionable feedback or improvements based on the user's question.
 
@@ -417,26 +417,103 @@ async function callLLMApi(question, code, option) {
                 content: prompt,
             },
         ],
+        stream: false
     };
-    try {
-        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${OR_KEY}`,
-                "Content-Type": "application/json",
-            },
-            data: JSON.stringify(body),
-        });
-        if (!response.ok) {
-            throw new Error(`Response status: ${response.status}`);
-        }
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Authorization": `Bearer ${OR_KEY}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+    });
+    const res = await response.json()
+    return res
+    // .then((response) => {
+    //     const reader = response.body.getReader();
+    //     reader.read().then(function pump({ done, value }) {
+    //         if (done) { 
+    //             return ;
+    //         }
 
-        const json = await response.json();
-        console.log(json);
-        return json
-    } catch (error) {
-        console.log(error)
-    }
+    //         return reader.read().then(pump);
+    //     })
+    // }).catch((err) => console.log(err))
+    // we have a readable stream that sends the data to the client
+    // const reader = response.body.getReader();
+    // const streamer = reader.read().then(async function pump({ done, value }) {
+    //     if (done) {
+    //         return;
+    //     }
+    //     async start(controller) {
+    //         const encoder = new TextEncoder();
+    //         try {
+    //             for await (const chunk of completion) {
+    //                 const content = chunk.choices[0]?.delta?.content
+    //                 if (content) {
+    //                     const text = encoder.encode(content);
+    //                     controller.enqueue(text);
+    //                 }
+    //             }
+    //         } catch (error) {
+    //             console.error(error);
+    //         } finally {
+    //             // we need to close the stream when we are done
+    //             controller.close();
+    //         }
+    //     }
+    //     return reader.read().then(pump);
+    // })
+    // const stream = new ReadableStream({
+    //     // we use async so this doesn't stall the main thread while waiting for data. we can have multiple connection at the same time
+    //     async start(controller) {
+    //         const encoder = new TextEncoder();
+    //         try {
+    //             console.log(response.body)
+    //             for await (const chunk of response.body) {
+    //                 const content = chunk.choices[0]?.delta?.content
+    //                 if (content) {
+    //                     const text = encoder.encode(content);
+    //                     controller.enqueue(text);
+    //                 }
+    //             }
+    //         } catch (error) {
+    //             console.error(error);
+    //         } finally {
+    //             // we need to close the stream when we are done
+    //             controller.close();
+    //         }
+    //     }
+    // });
+
+    // const reader = response.body.getReader();
+
+    // const stream = new ReadableStream({
+    //     async start(controller) {
+    //         const encoder = new TextEncoder();
+    //         try {
+    //             while (true) {
+    //                 const { done, value } = await reader.read();
+    //                 if (done) {
+    //                     break;
+    //                 }
+    //                 const content = new TextDecoder().decode(value);
+    //                 console.log(content)
+    //                 const completion = JSON.parse(content);
+    //                 const chunk = completion.choices[0]?.delta?.content;
+    //                 if (chunk) {
+    //                     const text = encoder.encode(chunk);
+    //                     controller.enqueue(text);
+    //                 }
+    //             }
+    //         } catch (error) {
+    //             console.error(error);
+    //         } finally {
+    //             controller.close();
+    //         }
+    //     }
+    // });
+    // return new Response(stream)
     // return new Promise((resolve, reject) => {
     //     $.ajax({
     //         url: `https://openrouter.ai/api/v1/chat/completions`,
@@ -464,16 +541,31 @@ async function sendButtonClicked() {
     console.log(userInput);
     const code = sourceEditor.getValue().trim();
     console.log("Source editor text: ", code);
-    const selectOption = $selectAi.find(":selected").id;
-    console.log(selectOption, selectedOption)
     const newHTMLElement = document.createElement("p");
     newHTMLElement.innerText = userInput;
     document.getElementById("chat-messages").appendChild(newHTMLElement);
     document.getElementById("chat-field").value = "";
     const llmResponse = await callLLMApi(userInput, code, selectedOption);
+    console.log(llmResponse)
+    // for await (var chunk of llmResponse.body) {
+    //     console.log(chunk)
     const llmHTMLElement = document.createElement("p");
     llmHTMLElement.innerText = llmResponse.choices[0].message.content;
     document.getElementById("chat-messages").appendChild(llmHTMLElement);
+    // }
+    // const reader = llmResponse.body.getReader();
+    // const decoder = new TextDecoder();
+    // while (true) {
+    //     const { done, value } = await reader.read();
+    //     if (done) {
+    //         break;
+    //     }
+    //     const text = decoder.decode(value);
+    //     const llmHTMLElement = document.createElement("p");
+    //     llmHTMLElement.innerHTML += text;
+    //     console.log(text)
+    //     document.getElementById("chat-messages").appendChild(llmHTMLElement);
+    // }
 }
 
 async function saveAction() {
@@ -776,10 +868,6 @@ document.addEventListener("DOMContentLoaded", async function () {
             chatEditor = container.getElement().html(
                 `<div style="display:flex; flex-direction: column; gap: 1rem;color: white; padding:1rem; height: 100%;">
                 😊 Hello Headstarter!
-                <div>
-                    <input id='api-key' type='text' style="width: 80%; height: 100%;" placeholder="Type you key here" />
-                    <button id='submit-key' style="padding: 0.5rem; border-radius: 0.5rem; border: 1px solid #ccc;" class="ui primary button">submit</button>
-                </div>
                 <div id="chat-messages" style="display:flex; flex-direction: column; overflow: scroll; max-height: 90%; height:85vh;">
                     <p> Feel free to ask questions about the code!</p>
                 </div>
