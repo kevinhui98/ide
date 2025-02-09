@@ -539,6 +539,28 @@ async function sendButtonClicked() {
     console.log("Button clicked");
     const userInput = document.getElementById("chat-field").value;
     console.log(userInput);
+    // Disable editing specification_id, version, and app values
+    // const select = sourceEditor.createDecorationsCollection([
+    //     {
+    //         range: new monaco.Range(1, 0, 3, 0), // Block lines 1 to 3
+    //         options: {
+    //             isWholeLine: true,
+    //             className: 'editor-line-readonly',
+    //         },
+    //     },
+    // ]);
+    // // Disable line editing (handled from the CSS side but here as well to be safe)
+    // sourceEditor.onKeyDown(e => {
+    //     const isInBlockedRange = sourceEditor
+    //         .getSelections()
+    //         ?.findIndex(range => new monaco.Range(1, 0, 4, 0).intersectRanges(range)) !== -1;  // Block lines 1 to 3
+    //     if (isInBlockedRange) {
+    //         e.stopPropagation();
+    //         e.preventDefault();
+    //     }
+    //     console.log(isInBlockedRange)
+    // });
+
     const code = sourceEditor.getValue().trim();
     console.log("Source editor text: ", code);
     const newHTMLElement = document.createElement("p");
