@@ -44,6 +44,9 @@ var $commandLineArguments;
 var $runBtn;
 var $statusLine;
 var $selectAi
+var $sendChatBtn
+var $chatInput
+var $chatMessages
 var selectedOption = 'Gemini'
 var timeStart;
 
@@ -381,7 +384,7 @@ async function openAction() {
     }
 }
 
-async function callLLMApi(question, code, option = 'Gemini') {
+async function callLLM(question, code, option = 'Gemini') {
     const prompt = `
         You are a senior software engineer with expertise in multiple programming languages. Your task is to analyze the following code and provide detailed, actionable feedback or improvements based on the user's question.
 
@@ -545,7 +548,7 @@ async function sendButtonClicked() {
     newHTMLElement.innerText = userInput;
     document.getElementById("chat-messages").appendChild(newHTMLElement);
     document.getElementById("chat-field").value = "";
-    const llmResponse = await callLLMApi(userInput, code, selectedOption);
+    const llmResponse = await callLLM(userInput, code, selectedOption);
     console.log(llmResponse)
     // for await (var chunk of llmResponse.body) {
     //     console.log(chunk)
@@ -813,6 +816,11 @@ document.addEventListener("DOMContentLoaded", async function () {
                     fontSize = 13;
                     setFontSizeForAllEditors(fontSize);
                     break;
+                case "k":
+                    e.preventDefault();
+                    fontSize += 1;
+                    setFontSizeForAllEditors(fontSize);
+                    break;
             }
         }
     });
@@ -865,11 +873,10 @@ document.addEventListener("DOMContentLoaded", async function () {
         });
 
         layout.registerComponent("chat", function (container, state) {
-            chatEditor = container.getElement().html(
+            chatEditor = $(
                 `<div style="display:flex; flex-direction: column; gap: 1rem;color: white; padding:1rem; height: 100%;">
                 😊 Hello Headstarter!
                 <div id="chat-messages" style="display:flex; flex-direction: column; overflow: scroll; max-height: 90%; height:85vh;">
-                    <p> Feel free to ask questions about the code!</p>
                 </div>
                 <div style="display:flex; gap:3px; width=100%; border-radius: 0.5rem;">
                     <input id="chat-field" type="text" style="width: 80%;" placeholder="Type here to chat with us!" />
@@ -877,6 +884,17 @@ document.addEventListener("DOMContentLoaded", async function () {
                 </div>
           </div>`
             );
+            container.getElement().append(chatEditor);
+            $chatMessages = chatEditor.find("#chat-messages");
+            $chatInput = chatEditor.find("#chat-field");
+
+            // Handle enter key (but shift+enter for new line)
+            $chatInput.on("keydown", function (e) {
+                if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    sendButtonClicked()
+                }
+            });
         });
 
         layout.on("initialised", function () {
