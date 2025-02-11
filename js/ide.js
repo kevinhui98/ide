@@ -1,4 +1,5 @@
 import { IS_PUTER } from "./puter.js";
+import { marked } from "https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js";
 const API_KEY = ""; // Get yours at https://platform.sulu.sh/apis/judge0
 const OR_KEY = '';
 
@@ -537,6 +538,62 @@ async function callLLM(question, code, option = 'Gemini') {
     //     });
     // });
 }
+async function llmInLineChat(wholeCode, highlightedCode, query) {
+    const prompt = `
+          You are a senior software engineer with expertise in multiple programming languages. Your task is to analyze the following segment of code and the whole code from which that segment code belongs to. Provide a detailed yet concise response to the question/comment that the user has.
+  
+          Question/Comment:
+          ${query}
+  
+          Segment of Code:
+          ${highlightedCode}
+  
+          Whole Code:
+          ${wholeCode}
+  
+          Please provide:
+          1. One second analysis for segment of code in regard tot he whole code.
+          2. Direct answer to the comment/question.
+  
+          Note: Be concise and clear. No hallucinations.
+          Lets think about this line by line
+      `;
+
+    const models = {
+        'Gemini': 'google/gemini-2.0-flash-thinking-exp:free',
+        'Deepseek': 'deepseek/deepseek-r1:free',
+        'Openai': 'openai/gpt-4o',
+        'Llama': 'nvidia/llama-3.1-nemotron-70b-instruct:free',
+
+    }
+    const body = {
+        model: models[selectedOption],
+        messages: [
+            {
+                role: "system",
+                content:
+                    "You are a senior software engineer with expertise in multiple programming languages.",
+            },
+            {
+                role: "user",
+                content: prompt,
+            },
+        ],
+        stream: false
+    };
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Authorization": `Bearer ${OR_KEY}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+    });
+    const res = await response.json()
+    console.log(res.choices[0].message.content)
+    return res.choices[0].message.content
+    //returns a array still need get the message from choices
+}
 
 async function sendButtonClicked() {
     console.log("Button clicked");
@@ -958,6 +1015,118 @@ document.addEventListener("DOMContentLoaded", async function () {
     document
         .getElementById("chat-button")
         .addEventListener("click", sendButtonClicked);
+
+    sourceEditor.addAction({
+        id: "inline-help",
+        label: "Inline Help",
+        contextMenuGroupId: "navigation",
+        contextMenuOrder: 1,
+        run: function (editor) {
+            console.log("Hi");
+            const selection = editor.getSelection();
+
+            if (!selection.isEmpty()) {
+                const selectedText = sourceEditor.getModel().getValueInRange(selection);
+                console.log("Highlighted text: ", selectedText);
+
+                const selectionPosition = editor.getScrolledVisiblePosition(
+                    selection.getStartPosition()
+                );
+
+                // Create popup
+                const popup = document.createElement("div");
+                popup.className = "ai-popup";
+                popup.textContent = "This is a popup!";
+
+                const chatMessages = document.createElement("div");
+                chatMessages.className = "inline-res";
+
+                const startingMessage = document.createElement("p");
+                startingMessage.innerText = "Let's talk about what you selected.";
+                chatMessages.appendChild(startingMessage);
+                popup.appendChild(chatMessages);
+
+                const chatField = document.createElement("textarea");
+                chatField.id = "inline-chat-field";
+                chatField.required = true
+                chatField.placeholder = "What should we implement.";
+                popup.appendChild(chatField);
+                // Handle enter key (but shift+enter for new line)
+                $(popup).on("keydown", async function (e) {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        const input = document.getElementById("inline-chat-field");
+                        document.getElementById('inline-chat-field').value = '';
+                        if (input.value) {
+                            console.log("Input value: ", input.value);
+                            const newMsg = document.createElement("p");
+                            newMsg.innerText = input.value;
+                            chatMessages.appendChild(newMsg);
+                            const newLlmResponse = await llmInLineChat(
+                                editor.getValue().trim(),
+                                selectedText,
+                                input.value
+                            );
+                            const llmMessage = document.createElement("p");
+                            // llmMessage.innerHTML = marked.parse(newLlmResponse);
+                            llmMessage.innerHTML = marked.parse(newLlmResponse)
+                            chatMessages.appendChild(llmMessage);
+                        }
+                    }
+                });
+
+                const inlineSubmitButton = document.createElement("button");
+                inlineSubmitButton.id = "inline-chat-submit-button";
+                inlineSubmitButton.innerText = "Submit";
+                inlineSubmitButton.type = "submit"
+                inlineSubmitButton.style.backgroundColor = 'Purple';
+                inlineSubmitButton.style.color = 'white';
+                inlineSubmitButton.addEventListener("click", async () => {
+                    const input = document.getElementById("inline-chat-field");
+                    if (input.value) {
+                        console.log("Input value: ", input.value);
+                        const newMsg = document.createElement("p");
+                        newMsg.innerText = input.value;
+                        chatMessages.appendChild(newMsg);
+                        const newLlmResponse = await llmInLineChat(
+                            editor.getValue().trim(),
+                            selectedText,
+                            input.value
+                        );
+                        const llmMessage = document.createElement("p");
+                        llmMessage.innerText = newLlmResponse;
+                        chatMessages.appendChild(llmMessage);
+                    }
+                });
+
+
+                popup.appendChild(inlineSubmitButton);
+
+                // Position popup above selection
+                const editorDomNode = editor.getDomNode();
+                const editorCoords = editorDomNode.getBoundingClientRect();
+                popup.style.top = `${editorCoords.top + selectionPosition.top - 100}px`;
+                popup.style.left = `${editorCoords.left + selectionPosition.left}px`;
+
+                const closeBtn = document.createElement("button");
+
+                closeBtn.className = "popup-close-btn";
+                closeBtn.innerHTML = "×";
+                closeBtn.onclick = () => popup.remove();
+
+                popup.appendChild(closeBtn);
+                document.body.appendChild(popup);
+                $(document).on("keydown", "body", function (e) {
+                    if (e.key === 'Escape' && popup) {
+                        popup.remove()
+                    }
+                })
+
+            } else {
+                console.log("Nothing is highlighted.");
+            }
+        },
+    });
 
     window.onmessage = function (e) {
         if (!e.data) {
