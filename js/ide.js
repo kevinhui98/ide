@@ -43,18 +43,17 @@ var layout;
 var sourceEditor;
 var stdinEditor;
 var stdoutEditor;
-var chatEditor;
 
 var $selectLanguage;
 var $compilerOptions;
 var $commandLineArguments;
 var $runBtn;
 var $statusLine;
-var $selectAi
-var $sendChatBtn
-var $chatInput
-var $chatMessages
-var selectedOption = 'Gemini'
+var $selectAi;
+var $sendChatBtn;
+var $chatInput;
+var $chatMessages;
+var selectedOption = 'Gemini';
 var timeStart;
 
 var sqliteAdditionalFiles;
@@ -361,12 +360,10 @@ async function handleSyntaxError(sourceCode, language, error) {
                     if (change.removals.length > 0) {
                         // Look for the first line to remove
                         const lineToFind = change.removals[0]
-                        targetLine = currentCode.findIndex(
-                            codeLine => {
-                                codeLine.trim() === lineToFind.trim()
-                            }
-                        )
+                        console.log(lineToFind.trim())
+                        targetLine = currentCode.findIndex(codeLine => codeLine.trim() === lineToFind.trim())
                     }
+                    console.log(targetLine)
                     // If we couldn't find the line and we have an error line, use that
                     if (targetLine === -1 && errorLine) {
                         targetLine = errorLine - 1
