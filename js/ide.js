@@ -1,13 +1,19 @@
 import { IS_PUTER } from "./puter.js";
 import { marked } from "https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js";
 const API_KEY = ""; // Get yours at https://platform.sulu.sh/apis/judge0
-const OR_KEY = '';
+
 
 const AUTH_HEADERS = API_KEY
     ? {
         Authorization: `Bearer ${API_KEY}`,
     }
     : {};
+
+let OPENROUTER_API_KEY = localStorage.getItem('OPENROUTER_API_KEY') || "";
+function setOpenRouterApiKey(key) {
+    OPENROUTER_API_KEY = key;
+    localStorage.setItem('OPENROUTER_API_KEY', key);
+}
 
 const CE = "CE";
 const EXTRA_CE = "EXTRA_CE";
@@ -175,7 +181,7 @@ function handleRunError(jqXHR) {
     );
 }
 
-function handleResult(data) {
+async function handleResult(data) {
     const tat = Math.round(performance.now() - timeStart);
     console.log(`It took ${tat}ms to get submission result.`);
 
@@ -190,6 +196,11 @@ function handleResult(data) {
     const output = [compileOutput, stdout].join("\n").trim();
 
     stdoutEditor.setValue(output);
+
+    if (status.id === 6) {
+        const SelectedLanguage = $selectLanguage.find(":selected").text();
+        handleSyntaxError(sourceEditor.getValue(), SelectedLanguage, output);
+    }
 
     $runBtn.removeClass("disabled");
 
@@ -206,7 +217,194 @@ function handleResult(data) {
         "*"
     );
 }
+async function handleSyntaxError(sourceCode, language, error) {
+    if (!OPENROUTER_API_KEY) {
+        showError('API Key Required', 'Please set your OpenRouter API key in the Code Assistant pandel to get AI suggestions for syntax errors.')
+        return
+    }
+    //Create a temporary marker to show we're processing
+    const errorLineMatch = error.match(/error|Error on line (\d+)/)
+    const errorLine = errorLineMatch ? parseInt(errorLineMatch[1]) : null
 
+    if (errorLine) {
+        sourceEditor.deltaDecorations([], [{
+            range: new monaco.Range(errorLine, 1, errorLine, 1),
+            options: {
+                isWholeLine: true,
+                className: 'errorHighlight',
+                glyphMarginClassName: 'errorGlyphMargin'
+            }
+        }])
+    }
+    try {
+        const prompt = `
+        You are an expert programming assistant. A user has code that produced a syntax error. Analyze the code error, then provide a specific fix. Formet your response as a diff in the following format:
+        
+        ERROR_ANALYSIS:<brief explanation of the error>
+        
+        DIFF:
+        <show only the lines that need to change, with - for removals and + for additions>
+        
+        EXPLAINATION: <brief explanation of the fix>
+        
+        Keep your response concise and focused on the specifi syntax error.`
+
+        const models = {
+            'Gemini': 'google/gemini-2.0-flash-thinking-exp:free',
+            'Deepseek': 'deepseek/deepseek-r1:free',
+            'Openai': 'openai/gpt-4o',
+            'Llama': 'nvidia/llama-3.1-nemotron-70b-instruct:free',
+
+        }
+        const body = {
+            model: models[selectedOption],
+            messages: [
+                {
+                    role: "system",
+                    content:
+                        prompt,
+                },
+                {
+                    role: "user",
+                    content: `Language: ${language}\n\nCode:\n${sourceCode}\n\nError:\n${error}`,
+                },
+            ],
+            stream: false
+        };
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+        });
+        if (!response.ok) {
+            throw new Error(`API request failed: ${response.statusText}`)
+        }
+        const res = await response.json()
+        const suggestion = res.choices[0].message.content
+        const diffMatch = suggestion.match(/DIFF:\n([\s\S]*?)(?=\n\nEXPLANATION:|$)/)
+        const explanationMatch = suggestion.match(/EXPLANATION:\x*([\s\S]*?)$/)
+        if (diffMatch) {
+            // Format the diff for display
+            const formattedDiff = diffMatch[1]
+                .split('\n')
+                .map(line => {
+                    if (line.startsWith('+')) {
+                        return `<span class="text-[#51cf66]">${line}</span>`
+                    } else if (line.startsWith('-')) {
+                        return `<span class="text-[#ff6b6b]">${line}</span>`
+                    }
+                    return `<span class="text-[#8a8a8a]">${line}</span>`
+                })
+                .join('\n')
+            const diffContainer = document.createElement('div')
+            diffContainer.className = 'diff-suggestion bg-[#1e1e1e] p-4 rounded-lg border border-[#3e3e42] fixed bottom-4 right-4 w-96 shadow-lg'
+            diffContainer.innerHTML = `
+            <div class="diff-header flex justify-between items-center mb-2">
+                <h3 class="text-[#cccccc] font-semibold"> Suggested Fix</h3>
+                <div class="flex gap-2">
+                    <button class="accept-diff bg-[#0078d4] hover:bg-[#006bb3] text-white px-3  py-1 rounded">Accept</button>
+                    <button class="reject-diff bg-[#3e3e42] hover:bg-[#4e4e52] text-white px-3  py-1 rounded">Reject</button>
+                </div>
+            </div>
+            <pre class="diff-content text-sm font-mono text-[#cccccc] overflow-x-auto whitespace-pre">${formattedDiff}</pre>
+            ${explanationMatch ? `<p class="mt-2 text0sm text-[#8a8a8a]"> ${explanationMatch[1]}</p>` : ''}
+            `
+            // Remove any existing diff suggestions
+            const existingDiff = document.querySelector('.diff-suggestion')
+            if (existingDiff) { existingDiff.remove(); }
+            document.body.appendChild(diffContainer);
+            console.log(diffContainer)
+            console.log(diffContainer.querySelector('.accept-diff'))
+            diffContainer.querySelector('.accept-diff').addEventListener('click', () => {
+                const diff = diffMatch[1]
+                console.log('Raw diff:', diff)
+
+                // Split into lines and clean up
+                const lines = diff.split('\n')
+                    .map(line => line.trimEnd()) // Keep leading whitespace, remove trailing
+                    .filter(line => line.length > 0) // Remove empty lines
+
+                console.log("parsed lines:", lines)
+
+                let currentCode = sourceEditor.getValue().split('\n')
+                console.log('Current code lines:', currentCode)
+
+                // Group the changes by finding consecutive - and + lines
+                let changes = []
+                let currentChanges = { removals: [], additions: [] }
+                lines.forEach(line => {
+                    if (line.startsWith('-')) {
+                        currentChanges.removals.push(line.substring(1))
+                    } else if (line.startsWith('+')) {
+                        currentChanges.additions.push(line.substring(1))
+                    } else {
+                        // Context line - if we have a current change, save it and starta new one
+                        if (currentChanges.removals.length > 0 || currentChanges.additions.length > 0) {
+                            changes.push(currentChanges)
+                            currentChanges = { removals: [], additions: [] }
+                        }
+                    }
+                })
+
+                if (currentChanges.removals.length > 0 || currentChanges.additions.length > 0) {
+                    changes.push(currentChanges)
+                }
+                console.log('Grouped changes:', changes)
+
+                changes.forEach(change => {
+                    // Find where to apply the change
+                    let targetLine = -1
+                    // first try to find the line to replace
+                    if (change.removals.length > 0) {
+                        // Look for the first line to remove
+                        const lineToFind = change.removals[0]
+                        targetLine = currentCode.findIndex(
+                            codeLine => {
+                                codeLine.trim() === lineToFind.trim()
+                            }
+                        )
+                    }
+                    // If we couldn't find the line and we have an error line, use that
+                    if (targetLine === -1 && errorLine) {
+                        targetLine = errorLine - 1
+                    }
+                    // If we found a place to make changes
+                    if (targetLine !== -1) {
+                        console.log('Applying change at line:', targetLine)
+                        console.log('Removing lines:', change.removals)
+                        console.log('Adding lines:', change.additions)
+
+                        // Remove the old line
+                        if (change.removals.length > 0) {
+                            currentCode.splice(targetLine, change.removals.length)
+                        }
+                        if (change.additions.length > 0) {
+                            currentCode.splice(targetLine, 0, ...change.additions)
+                        }
+                    } else {
+                        console.log('Could not find target line for change')
+                    }
+                })
+                // Apply the changes
+                const newContent = currentCode.join('\n')
+                console.log('new content:', newContent)
+                sourceEditor.setValue(newContent)
+
+                // Remove the diff view
+                diffContainer.remove()
+            })
+            diffContainer.querySelector('.reject-diff').addEventListener('click', () => {
+                diffContainer.remove()
+            })
+        }
+    } catch (error) {
+        console.error('Error getting suggestion:', error)
+        showError('Error', 'Failed to get code suggestion. Please check your OpenRouter API key and try again')
+    }
+}
 async function getSelectedLanguage() {
     return getLanguage(getSelectedLanguageFlavor(), getSelectedLanguageId());
 }
@@ -385,159 +583,6 @@ async function openAction() {
     }
 }
 
-async function callLLM(question, code, option = 'Gemini') {
-    const prompt = `
-        You are a senior software engineer with expertise in multiple programming languages. Your task is to analyze the following code and provide detailed, actionable feedback or improvements based on the user's question.
-
-        User's Question: ${question}
-
-        Code:
-        ${code}
-
-        Please provide:
-        1. A brief analysis of the code.
-        2. Specific improvements or optimizations that can be made.
-        3. Any best practices or design patterns that could be applied.
-        4. If applicable, provide an example of improved code.
-    `;
-
-    const models = {
-        'Gemini': 'google/gemini-2.0-flash-thinking-exp:free',
-        'Deepseek': 'deepseek/deepseek-r1:free',
-        'Openai': 'openai/gpt-4o',
-        'Llama': 'nvidia/llama-3.1-nemotron-70b-instruct:free',
-
-    }
-    const body = {
-        model: models[option],
-        messages: [
-            {
-                role: "system",
-                content:
-                    "You are a senior software engineer with expertise in multiple programming languages.",
-            },
-            {
-                role: "user",
-                content: prompt,
-            },
-        ],
-        stream: false
-    };
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-            "Authorization": `Bearer ${OR_KEY}`,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-    });
-    const res = await response.json()
-    return res
-    // .then((response) => {
-    //     const reader = response.body.getReader();
-    //     reader.read().then(function pump({ done, value }) {
-    //         if (done) { 
-    //             return ;
-    //         }
-
-    //         return reader.read().then(pump);
-    //     })
-    // }).catch((err) => console.log(err))
-    // we have a readable stream that sends the data to the client
-    // const reader = response.body.getReader();
-    // const streamer = reader.read().then(async function pump({ done, value }) {
-    //     if (done) {
-    //         return;
-    //     }
-    //     async start(controller) {
-    //         const encoder = new TextEncoder();
-    //         try {
-    //             for await (const chunk of completion) {
-    //                 const content = chunk.choices[0]?.delta?.content
-    //                 if (content) {
-    //                     const text = encoder.encode(content);
-    //                     controller.enqueue(text);
-    //                 }
-    //             }
-    //         } catch (error) {
-    //             console.error(error);
-    //         } finally {
-    //             // we need to close the stream when we are done
-    //             controller.close();
-    //         }
-    //     }
-    //     return reader.read().then(pump);
-    // })
-    // const stream = new ReadableStream({
-    //     // we use async so this doesn't stall the main thread while waiting for data. we can have multiple connection at the same time
-    //     async start(controller) {
-    //         const encoder = new TextEncoder();
-    //         try {
-    //             console.log(response.body)
-    //             for await (const chunk of response.body) {
-    //                 const content = chunk.choices[0]?.delta?.content
-    //                 if (content) {
-    //                     const text = encoder.encode(content);
-    //                     controller.enqueue(text);
-    //                 }
-    //             }
-    //         } catch (error) {
-    //             console.error(error);
-    //         } finally {
-    //             // we need to close the stream when we are done
-    //             controller.close();
-    //         }
-    //     }
-    // });
-
-    // const reader = response.body.getReader();
-
-    // const stream = new ReadableStream({
-    //     async start(controller) {
-    //         const encoder = new TextEncoder();
-    //         try {
-    //             while (true) {
-    //                 const { done, value } = await reader.read();
-    //                 if (done) {
-    //                     break;
-    //                 }
-    //                 const content = new TextDecoder().decode(value);
-    //                 console.log(content)
-    //                 const completion = JSON.parse(content);
-    //                 const chunk = completion.choices[0]?.delta?.content;
-    //                 if (chunk) {
-    //                     const text = encoder.encode(chunk);
-    //                     controller.enqueue(text);
-    //                 }
-    //             }
-    //         } catch (error) {
-    //             console.error(error);
-    //         } finally {
-    //             controller.close();
-    //         }
-    //     }
-    // });
-    // return new Response(stream)
-    // return new Promise((resolve, reject) => {
-    //     $.ajax({
-    //         url: `https://openrouter.ai/api/v1/chat/completions`,
-    //         type: "POST",
-    //         contentType: "application/json",
-    //         data: JSON.stringify(body),
-    //         headers: AUTH_HEADERS,
-    //         success: function (data, textStatus, request) {
-    //             console.log(data);
-    //             const response = data.choices[0].message.content;
-    //             console.log("Message by deekseek: ", response);
-    //             resolve(response);
-    //         },
-    //         error: function (data, textStatus) {
-    //             console.log("Error getting response from open router.", data, textStatus);
-    //             reject("Error.");
-    //         },
-    //     });
-    // });
-}
 async function llmInLineChat(wholeCode, highlightedCode, query) {
     const prompt = `
           You are a senior software engineer with expertise in multiple programming languages. Your task is to analyze the following segment of code and the whole code from which that segment code belongs to. Provide a detailed yet concise response to the question/comment that the user has.
@@ -578,20 +623,23 @@ async function llmInLineChat(wholeCode, highlightedCode, query) {
                 role: "user",
                 content: prompt,
             },
-        ],
-        stream: false
+        ]
     };
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-            "Authorization": `Bearer ${OR_KEY}`,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-    });
-    const res = await response.json()
-    console.log(res.choices[0].message.content)
-    return res.choices[0].message.content
+    try {
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+        });
+        const res = await response.json()
+        console.log(res.choices[0].message.content)
+        return res.choices[0].message.content
+    } catch (error) {
+        console.error('new error', error)
+    }
     //returns a array still need get the message from choices
 }
 
@@ -952,28 +1000,275 @@ document.addEventListener("DOMContentLoaded", async function () {
         });
 
         layout.registerComponent("chat", function (container, state) {
-            chatEditor = $(
-                `<div style="display:flex; flex-direction: column; gap: 1rem;color: white; padding:1rem; height: 100%;">
-                😊 Hello Headstarter!
-                <div id="chat-messages" style="display:flex; flex-direction: column; overflow: scroll; max-height: 90%; height:85vh;">
+            const chatContainer = document.createElement("div")
+            chatContainer.className = "chat-container h-pull flex flex-col bg-[#1e1e1e] my-4"
+            chatContainer.innerHTML =
+                `<div class="chat-header bg-[#252526] border-b border-[#3e3e42] p-4">
+                    <div class="chat-header-content space-y-1">
+                        <h3 style ="color: #cccccc">Code Assistant</h3>
+                        <div class="flex item-center gap-2">
+                            <input type="password" id="openrouter-api-key"
+                            class="flex-1 bg-[#1e1e1e] text-[#cccccc] text-sm rounded border border-[#3e3e42] px-2 py-1 focus:outline-none focus:border-[@0078d4]" placeholder="Enter OpenRouter API Key" value="${OPENROUTER_API_KEY}" />
+                            <button id="save-api-key" class="bg-[#0078d4] hover:bg-[#006bb3] text-white text-sm px-2 py-1 rounded transition-colors">Save Key</button>
+                        </div>
+                        <p class="chat-description" style="font-size:smaller; color: #8a8a8a;"> Ask questions about your code or get help with programming</p>
+                    </div>
                 </div>
-                <div style="display:flex; gap:3px; width=100%; border-radius: 0.5rem;">
-                    <input id="chat-field" type="text" style="width: 80%;" placeholder="Type here to chat with us!" />
-                    <button id="chat-button" style="padding: 0.5rem; border-radius: 0.5rem; border: 1px solid #ccc;" class="ui primary button">Send</button>
+                <div id="chat-messages" class="messages flex-1 overflow-y-scroll p-4 space-y-4 max-h-[40%]"></div>
+                <div class="chat-input-container border-t border-[#3e3e42] p-4 bg-[#252526]">
+                    <div class="chat-input-wrapper flex gap-2">
+                        <textarea id="chat-field" class="chat-input flex-1 bg-[#1e1e1e] text-[#cccccc] rounded-lg border border-[#3e3e42] p-3 focus:outline-none focus:border-[#0078d4] w-[80px]" rows='1' placeholder="Type here to chat with us!" ></textarea>
+                        <button id="chat-button" class="send-btn bg-[#0078d4] hover:bg-[006bb3] text-white px-4 py-2 rounded-lg flex items-center transition-colors ui primary button">Send</button>
+                    </div>
                 </div>
-          </div>`
-            );
-            container.getElement().append(chatEditor);
-            $chatMessages = chatEditor.find("#chat-messages");
-            $chatInput = chatEditor.find("#chat-field");
+          `
 
-            // Handle enter key (but shift+enter for new line)
-            $chatInput.on("keydown", function (e) {
+            // container.getElement().append(chatEditor);
+            // $chatMessages = chatEditor.find("#chat-messages");
+            // $chatInput = chatEditor.find("#chat-field");
+            const inputEl = chatContainer.querySelector('textarea')
+            const messagesEl = chatContainer.querySelector('#chat-messages')
+            const sendBtn = chatContainer.querySelector('#chat-button')
+
+            // Auto-resize textarea as user types
+            inputEl.addEventListener('input', function () {
+                this.style.height = 'auto'
+                this.style.height = Math.min(this.scrollHeight, 75) + 'px'
+            })
+            function formatTimestamp() {
+                const now = new Date()
+                return now.toLocaleDateString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                })
+            }
+            function addUserMessage(message) {
+                const messageHTML = `
+                    <div class="message-wrapper user-message-wrapper flex justify-end">
+                        <div class="message user-message bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-2 max-w-[80%]">
+                            <div class="message-content">${message}</div>
+                            <div class="message timestamp text-xs text-[#8a8a8a] mt-1">${formatTimestamp()}</div>
+                        </div>
+                    </div>
+                `
+                messagesEl.insertAdjacentHTML('beforeend', messageHTML)
+                messagesEl.scrollTop = messagesEl.scrollHeight
+            }
+            function addAssistantMessage(message) {
+                const messageHTML = `
+                    <div class="message-wrapper assistant-message-wrapper flex justify-start">
+                        <div class="message assistant-message bg-[#252526] text-[#cccccc] rounded2xl rounded-tl-sm px-4 py-2 max-w-[80%]">
+                            <div class="message-content">${message}</div>
+                            <div class="message-timestamp text-xs text-[#8a8a8a] mt-1">${formatTimestamp()}</div>
+                        </div>
+                    </div>
+                `
+                messagesEl.insertAdjacentHTML('beforeend', messageHTML)
+                messagesEl.scrollTop = messagesEl.scrollHeight
+            }
+            function addTypingIndicator() {
+                const indicatorHTML = `
+                <div class="message-wrapper assistant-message-wraper flex justify-start" id="typing-indicator">
+                    <div class="message assistant-message bg-[#252526] text-[#cccccc] roudned 2xl rounded-tl-sm px-4 py-2">
+                        <div class="typing-indicator flex gap-1">
+                            <div class="typing-dot w-2 h-2 bg-[#8a8a8a] rounded-full animate-bounce"></div>
+                            <div class="typing-dot w-2 h-2 bg-[#8a8a8a] rounded-full animate-bounce" style="animation-deplay: 0.2s"></div>
+                            <div class="typing-dot w-2 h-2 bg-[#8a8a8a] rounded-full animate-bounce" style="animation-deplay: 0.2s"></div>
+                        </div>
+                    </div>
+                </div>
+                `
+                messagesEl.insertAdjacentHTML('beforeend', indicatorHTML)
+                messagesEl.scrollTop = messagesEl.scrollHeight
+            }
+            function removeTypingIndicator() {
+                const indicator = messagesEl.querySelector('#typing-indicator')
+                if (indicator) indicator.remove()
+            }
+            async function callLLM(option = 'Gemini') {
+                const message = inputEl.value.trim()
+                if (!message) return
+                inputEl.value = ""
+                inputEl.style.height = '56px'
+                console.log(message)
+                addUserMessage(message)
+                addTypingIndicator()
+                const codeContext = {
+                    source_code: sourceEditor.getValue(),
+                    languages: $selectLanguage.find(":selected").text(),
+                    stdin: stdinEditor.getValue(),
+                    stdout: stdoutEditor.getValue()
+                }
+                const prompt = `
+                    You are a senior software engineer with expertise in multiple programming languages. you have access to the following code context:
+                    Langauge: ${codeContext.languages}
+                    Source Code: 
+                    \`\`\`
+                    ${codeContext.source_code}
+                    \`\`\`
+                    ${codeContext.stdin ? `Input:\n$(codeContext.stdin)\n` : ''}
+                    ${codeContext.stdout ? `Output:\n$(codeContext.stdout)\n` : ''}
+            
+                    Please provide:
+                    1. A brief analysis of the code.
+                    2. Specific improvements or optimizations that can be made.
+                    3. Any best practices or design patterns that could be applied.
+                    4. If applicable, provide an example of improved code.
+
+                    let take this step by step
+                `;
+
+                const models = {
+                    'Gemini': 'google/gemini-2.0-flash-thinking-exp:free',
+                    'Deepseek': 'deepseek/deepseek-r1:free',
+                    'Openai': 'openai/gpt-4o',
+                    'Llama': 'nvidia/llama-3.1-nemotron-70b-instruct:free',
+
+                }
+                const body = {
+                    model: models[option],
+                    messages: [
+                        {
+                            role: "system",
+                            content:
+                                prompt,
+                        },
+                        {
+                            role: "user",
+                            content: `Here is what the user said:
+                            <User_message>${message}</user_message>
+                            
+                            Provide a detailed and accurate response to the user's message based on the code context. If suggesting code changes, explain the reasoning and ensure they follow best practices.`,
+                        },
+                    ],
+                    stream: false
+                };
+                try {
+                    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                        method: "POST",
+                        headers: {
+                            "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify(body),
+                    });
+                    if (!response.ok) {
+                        throw new Error(`API request Failed: ${response.statusText}`)
+                    }
+                    const res = await response.json()
+                    console.log(res)
+                    removeTypingIndicator()
+                    addAssistantMessage(marked.parse(res.choices[0].message.content))
+
+                } catch (error) {
+                    removeTypingIndicator()
+                    addAssistantMessage("Sorry, there was an error processing your request.")
+                }
+                // .then((response) => {
+                //     const reader = response.body.getReader();
+                //     reader.read().then(function pump({ done, value }) {
+                //         if (done) { 
+                //             return ;
+                //         }
+
+                //         return reader.read().then(pump);
+                //     })
+                // }).catch((err) => console.log(err))
+                // we have a readable stream that sends the data to the client
+                // const reader = response.body.getReader();
+                // const streamer = reader.read().then(async function pump({ done, value }) {
+                //     if (done) {
+                //         return;
+                //     }
+                //     async start(controller) {
+                //         const encoder = new TextEncoder();
+                //         try {
+                //             for await (const chunk of completion) {
+                //                 const content = chunk.choices[0]?.delta?.content
+                //                 if (content) {
+                //                     const text = encoder.encode(content);
+                //                     controller.enqueue(text);
+                //                 }
+                //             }
+                //         } catch (error) {
+                //             console.error(error);
+                //         } finally {
+                //             // we need to close the stream when we are done
+                //             controller.close();
+                //         }
+                //     }
+                //     return reader.read().then(pump);
+                // })
+                // const stream = new ReadableStream({
+                //     // we use async so this doesn't stall the main thread while waiting for data. we can have multiple connection at the same time
+                //     async start(controller) {
+                //         const encoder = new TextEncoder();
+                //         try {
+                //             console.log(response.body)
+                //             for await (const chunk of response.body) {
+                //                 const content = chunk.choices[0]?.delta?.content
+                //                 if (content) {
+                //                     const text = encoder.encode(content);
+                //                     controller.enqueue(text);
+                //                 }
+                //             }
+                //         } catch (error) {
+                //             console.error(error);
+                //         } finally {
+                //             // we need to close the stream when we are done
+                //             controller.close();
+                //         }
+                //     }
+                // });
+
+                // const reader = response.body.getReader();
+
+                // const stream = new ReadableStream({
+                //     async start(controller) {
+                //         const encoder = new TextEncoder();
+                //         try {
+                //             while (true) {
+                //                 const { done, value } = await reader.read();
+                //                 if (done) {
+                //                     break;
+                //                 }
+                //                 const content = new TextDecoder().decode(value);
+                //                 console.log(content)
+                //                 const completion = JSON.parse(content);
+                //                 const chunk = completion.choices[0]?.delta?.content;
+                //                 if (chunk) {
+                //                     const text = encoder.encode(chunk);
+                //                     controller.enqueue(text);
+                //                 }
+                //             }
+                //         } catch (error) {
+                //             console.error(error);
+                //         } finally {
+                //             controller.close();
+                //         }
+                //     }
+                // });
+                // return new Response(stream)
+            }
+            sendBtn.addEventListener("click", callLLM)
+            inputEl.addEventListener("keydown", (e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
-                    sendButtonClicked()
+                    callLLM()
                 }
-            });
+            })
+
+            // API Key handling
+            const apiKeyInput = chatContainer.querySelector("#openrouter-api-key")
+            const saveKeyBtn = chatContainer.querySelector("#save-api-key")
+            saveKeyBtn.addEventListener('click', () => {
+                const newKey = apiKeyInput.value.trim()
+                setOpenRouterApiKey(newKey)
+                addAssistantMessage("API key has been saved.")
+            })
+            container.getElement().append(chatContainer)
+
         });
 
         layout.on("initialised", function () {
@@ -1012,9 +1307,8 @@ document.addEventListener("DOMContentLoaded", async function () {
         .getElementById("judge0-save-btn")
         .addEventListener("click", saveAction);
 
-    document
-        .getElementById("chat-button")
-        .addEventListener("click", sendButtonClicked);
+    // document
+    //     .getElementById("chat-button").addEventListener('click', sendButtonClicked);
 
     sourceEditor.addAction({
         id: "inline-help",
@@ -1048,7 +1342,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
                 const chatField = document.createElement("textarea");
                 chatField.id = "inline-chat-field";
-                chatField.required = true
+                chatField.style.color = 'black'
                 chatField.placeholder = "What should we implement.";
                 popup.appendChild(chatField);
                 // Handle enter key (but shift+enter for new line)
@@ -1056,12 +1350,13 @@ document.addEventListener("DOMContentLoaded", async function () {
                     if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
                         const input = document.getElementById("inline-chat-field");
-                        document.getElementById('inline-chat-field').value = '';
+                        console.log(input)
                         if (input.value) {
                             console.log("Input value: ", input.value);
                             const newMsg = document.createElement("p");
                             newMsg.innerText = input.value;
                             chatMessages.appendChild(newMsg);
+                            document.getElementById('inline-chat-field').value = '';
                             const newLlmResponse = await llmInLineChat(
                                 editor.getValue().trim(),
                                 selectedText,
@@ -1069,6 +1364,7 @@ document.addEventListener("DOMContentLoaded", async function () {
                             );
                             const llmMessage = document.createElement("p");
                             // llmMessage.innerHTML = marked.parse(newLlmResponse);
+                            console.log(llmMessage)
                             llmMessage.innerHTML = marked.parse(newLlmResponse)
                             chatMessages.appendChild(llmMessage);
                         }
