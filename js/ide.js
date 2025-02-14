@@ -962,12 +962,45 @@ document.addEventListener("DOMContentLoaded", async function () {
                 minimap: {
                     enabled: true,
                 },
+                suggestOnTriggerCharacters: true,
+                quickSuggestions: {
+                    other: true,
+                    comments: true,
+                    strings: true,
+                },
+                parameterHints: {
+                    enabled: true,
+                },
+                suggestSelection: "first",
+                acceptSuggestionOnCommitCharacter: true,
+                acceptSuggestionOnEnter: "on",
+                snippetSuggestions: "inline",
             });
 
             sourceEditor.addCommand(
                 monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
                 run
             );
+            setupAutoComplete(sourceEditor);
+
+            // adding Tab method
+            sourceEditor.addCommand(monaco.KeyCode.Tab, function () {
+                const model = sourceEditor.getModel();
+                const selections = sourceEditor.getSelections();
+
+                sourceEditor.executeEdits(
+                    "insert-spaces",
+                    selections.map((selection) => ({
+                        range: selection,
+                        text: "    ", // 4 spaces
+                        forceMoveMarkers: true,
+                    }))
+                );
+            });
+            // Add click event listener to source editor
+            sourceEditor.onMouseDown(() => {
+                sourceEditor.focus();
+            });
         });
 
         layout.registerComponent("stdin", function (container, state) {
@@ -1019,10 +1052,6 @@ document.addEventListener("DOMContentLoaded", async function () {
                     </div>
                 </div>
           `
-
-            // container.getElement().append(chatEditor);
-            // $chatMessages = chatEditor.find("#chat-messages");
-            // $chatInput = chatEditor.find("#chat-field");
             const inputEl = chatContainer.querySelector('textarea')
             const messagesEl = chatContainer.querySelector('#chat-messages')
             const sendBtn = chatContainer.querySelector('#chat-button')
@@ -1265,6 +1294,10 @@ document.addEventListener("DOMContentLoaded", async function () {
                 addAssistantMessage("API key has been saved.")
             })
             container.getElement().append(chatContainer)
+            // Add click event listener to chat container
+            chatContainer.addEventListener('click', () => {
+                inputEl.focus();
+            });
 
         });
 
@@ -1656,4 +1689,166 @@ const EXTENSIONS_TABLE = {
 
 function getLanguageForExtension(extension) {
     return EXTENSIONS_TABLE[extension] || { flavor: CE, language_id: 43 }; // Plain Text (https://ce.judge0.com/languages/43)
+}
+
+// Add these constants near the top with other constants
+const INLINE_SUGGESTION_DELAY = 100; // ms delay before showing inline suggestions
+let lastInlineRequest = null;
+
+function setupAutoComplete(editor) {
+    // Register the inline suggestions provider
+    monaco.languages.registerInlineCompletionsProvider("*", {
+        provideInlineCompletions: async (model, position) => {
+            try {
+                // Don't show suggestions if we're not at the end of a line/word
+                const lineContent = model.getLineContent(position.lineNumber);
+                if (position.column < lineContent.length) {
+                    return { items: [] };
+                }
+
+                // Debounce suggestions
+                if (lastInlineRequest) {
+                    clearTimeout(lastInlineRequest);
+                }
+
+                const result = await new Promise((resolve) => {
+                    lastInlineRequest = setTimeout(async () => {
+                        const wordInfo = model.getWordUntilPosition(position);
+                        const prefix = lineContent.substring(0, position.column - 1);
+
+                        // Get context
+                        const previousLines = model
+                            .getLinesContent()
+                            .slice(
+                                Math.max(0, position.lineNumber - 3),
+                                position.lineNumber - 1
+                            );
+                        const nextLines = model
+                            .getLinesContent()
+                            .slice(position.lineNumber, position.lineNumber + 2);
+
+                        const currentLanguage = $selectLanguage.find(":selected").text();
+                        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+                            },
+                            body: JSON.stringify({
+                                model: "mistralai/mistral-small-24b-instruct-2501:free",
+                                messages: [
+                                    {
+                                        role: "system",
+                                        content: `You are an inline code completion assistant. Return ONLY a JSON array with a SINGLE completion item containing:
+                      - text: The suggested completion text (only the part that should be added)
+                      - description: A very brief description of what this completion does
+                      
+                      The completion should:
+                      1. Be a natural continuation of the current code
+                      2. Be contextually relevant
+                      3. Complete the current line or add a new line if appropriate
+                      4. Consider the surrounding code context
+                      
+                      Keep suggestions concise and relevant. Return ONLY the JSON array.`,
+                                    },
+                                    {
+                                        role: "user",
+                                        content: `Language: ${currentLanguage}
+                      Previous lines: ${previousLines.join("\n")}
+                      Current line: ${lineContent}
+                      Next lines: ${nextLines.join("\n")}
+                      Cursor position: Column ${position.column}`,
+                                    },
+                                ],
+                            }),
+                        });
+
+                        const data = await response.json();
+                        console.log(data)
+                        const suggestion = JSON.parse(data.choices[0].message.content)[0];
+
+                        resolve({
+                            items: [
+                                {
+                                    insertText: suggestion.text,
+                                    range: {
+                                        startLineNumber: position.lineNumber,
+                                        startColumn: position.column,
+                                        endLineNumber: position.lineNumber,
+                                        endColumn: position.column,
+                                    },
+                                    command: {
+                                        id: "editor.action.inlineSuggest.commit",
+                                        arguments: [],
+                                    },
+                                },
+                            ],
+                            enableForwardStability: true,
+                        });
+                    }, INLINE_SUGGESTION_DELAY);
+                });
+
+                return result;
+            } catch (error) {
+                console.error("Inline completion error:", error);
+                return { items: [] };
+            }
+        },
+    });
+
+    // Update editor options specifically for inline suggestions
+    editor.updateOptions({
+        inlineSuggest: {
+            enabled: true,
+            mode: "prefix",
+            showToolbar: "always",
+        },
+        suggest: {
+            preview: true,
+            previewMode: "prefix",
+            showInlineDetails: true,
+            showMethods: true,
+            showFunctions: true,
+            showVariables: true,
+            showConstants: true,
+            showConstructors: true,
+            showFields: true,
+            showProperties: true,
+            showEvents: true,
+            showOperators: true,
+            showUnits: true,
+            showValues: true,
+            showWords: true,
+            showColors: true,
+            showFiles: true,
+            showReferences: true,
+            showFolders: true,
+            showTypeParameters: true,
+            showSnippets: true,
+        },
+        quickSuggestions: {
+            other: "inline",
+            comments: "inline",
+            strings: "inline",
+        },
+        parameterHints: {
+            enabled: true,
+            cycle: true,
+        },
+        tabCompletion: "off",
+        acceptSuggestionOnEnter: "off",
+    });
+
+    // Add keyboard shortcuts
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Space, () => {
+        editor.trigger("keyboard", "editor.action.inlineSuggest.commit", {});
+    });
+
+    editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.RightArrow, () => {
+        editor.trigger(
+            "keyboard",
+            "editor.action.inlineSuggest.acceptNextWord",
+            {}
+        );
+    });
 }
