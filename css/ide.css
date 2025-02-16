@@ -1,21 +1,73 @@
 .judge0-file-menu {
-    min-width: 15rem !important;
+  min-width: 15rem !important;
 }
 
 #judge0-status-line {
-    font-family: "JetBrains Mono" !important;
+  font-family: "JetBrains Mono" !important;
 }
 
 #judge0-status-line:empty {
-    display: none;
+  display: none;
 }
 
 .judge0-hidden {
-    display: none !important;
+  display: none !important;
 }
 
 @media (display-mode: standalone) {
-    .judge0-standalone-hidden {
-        display: none !important;
-    }
+  .judge0-standalone-hidden {
+    display: none !important;
+  }
+}
+.ai-popup {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 450px;
+  min-height: 150px;
+  background-color: black;
+  border: 5px solid black;
+  color: white;
+  border-radius: 10px;
+  padding: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+}
+.popup-close-btn {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  cursor: pointer;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 30%;
+  border: none;
+}
+.popup-close-btn:hover {
+  background-color: rgb(285, 32, 32);
+}
+#inline-chat-field {
+  overflow-y: auto;
+  height: 100%;
+}
+#inline-chat-submit-button {
+  background-color: Purple;
+  color: white;
+}
+#inline-chat-submit-button:hover {
+  cursor: pointer;
+}
+.inline-res {
+  display: flex;
+  flex-direction: column;
+  height: 50%;
+  max-height: 300px;
+  overflow-y: scroll;
+  background-color: rgba(128, 128, 128, 0.417);
+  border-radius: round;
+  padding-left: 10px;
 }
