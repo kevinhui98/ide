@@ -31,3 +31,32 @@ Thanks a lot to all [contributors](https://github.com/judge0/ide/graphs/contribu
 
 ## License
 Judge0 IDE is licensed under the [MIT License](https://github.com/judge0/ide/blob/master/LICENSE).
+
+
+For this project, imagine you are an engineer at a startup looking to compete with LeetCode. You are tasked with building out AI features on top of the Judge0 IDE to enhance the user experience.
+
+Getting Started:
+
+Clone the Judge0 IDE repo here
+Run the code locally with the command python3 -m http.server 8000
+Make edits to the relevant files to fulfill the requirements below
+Project Requirements:
+
+​Add a chat interface for users to ask questions and get answers - see 36:11 in the Project Walkthrough video posted above
+​If a user's code doesn't compile, use AI to suggest a fix
+​Let the user select a segment of code and chat with it inline - see 1:09:03 in the Project Walkthrough video posted above
+Challenges:
+
+Make a pull request on the Judge0 IDE repo
+Add autocomplete suggestions as the user is typing
+Ensure minimal latency in the AI responses
+Add a bug finder feature that can identify bugs in a user’s code
+
+## Resources
+https://judge0.com/
+https://github.com/judge0/ide
+https://www.cursor.com/blog/prompt-design
+https://www.youtube.com/watch?v=oFfVt3S51T4&ab_channel=LexFridman
+https://github.com/continuedev/continue
+https://github.com/trypear/pearai-app
+https://openrouter.ai/deepseek/deepseek-r1:free
